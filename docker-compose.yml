@@ -1,0 +1,61 @@
+version: '3.3'
+
+services:
+  app:
+    image: nextcloud:20.0-apache
+    container_name: nextcloud_app
+    restart: unless-stopped
+    volumes:
+      - ${NEXTCLOUD_VOLUME:-./data/nextcloud}:/var/www/html
+    environment:
+      - MYSQL_HOST=db
+      - VIRTUAL_HOST=${VIRTUAL_HOST:-myapp.localhost}
+    env_file:
+      - db.env
+    depends_on:
+      - db
+    networks:
+      - nextcloud-network
+
+  db:
+    image: mariadb:10.4.15
+    container_name: nextcloud_db
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: unless-stopped
+    volumes:
+      - ${MYSQL_VOLUME:-./data/db}:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root}
+    env_file:
+      - db.env
+    networks:
+      - nextcloud-network
+
+  proxy:
+    image: jwilder/nginx-proxy:alpine
+    container_name: nextcloud_proxy
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ${NGINX_VOLUME:-./data/nginx}:/etc/nginx/conf.d
+      - ${CERTBOT_DIR:-./data/certbot}/conf:/etc/letsencrypt
+      - ${CERTBOT_DIR:-./data/certbot}/www:/var/www/certbot
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - nextcloud-network
+
+  certbot:
+    image: certbot/certbot
+    container_name: nextcloud_certbot
+    restart: unless-stopped
+    volumes:
+      - ${CERTBOT_DIR:-./data/certbot}/conf:/etc/letsencrypt
+      - ${CERTBOT_DIR:-./data/certbot}/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - nextcloud-network
+
+networks:
+  nextcloud-network:
